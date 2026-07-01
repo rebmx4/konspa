@@ -3,7 +3,7 @@ import WebKit
 import SafariServices
 import AVFoundation
 
-class ViewController: UIViewController, WKNavigationDelegate, WKUIDelegate {
+class ViewController: UIViewController, WKNavigationDelegate, WKUIDelegate, WKScriptMessageHandler {
 
     private var webView: WKWebView!
     private var progressView: UIProgressView!
@@ -44,6 +44,7 @@ class ViewController: UIViewController, WKNavigationDelegate, WKUIDelegate {
             source: "window.__IS_IOS_APP = true;",
             injectionTime: .atDocumentStart,
             forMainFrameOnly: false))
+        ucc.add(self, name: "nativeShare")
         config.userContentController = ucc
         config.allowsInlineMediaPlayback = true
         config.mediaTypesRequiringUserActionForPlayback = []
@@ -205,5 +206,28 @@ class ViewController: UIViewController, WKNavigationDelegate, WKUIDelegate {
                  initiatedByFrame frame: WKFrameInfo, type: WKMediaCaptureType,
                  decisionHandler: @escaping (WKPermissionDecision) -> Void) {
         decisionHandler(.grant)
+    }
+
+    // MARK: - WKScriptMessageHandler (native share sheet — web layer bridges here)
+    // The web "Поделиться" button posts here; presenting a real
+    // UIActivityViewController gives the wrapper genuine native functionality.
+    func userContentController(_ userContentController: WKUserContentController,
+                               didReceive message: WKScriptMessage) {
+        guard message.name == "nativeShare" else { return }
+        var items: [Any] = []
+        if let body = message.body as? [String: Any] {
+            if let text = body["text"] as? String, !text.isEmpty { items.append(text) }
+            if let urlStr = body["url"] as? String, let url = URL(string: urlStr) { items.append(url) }
+        } else if let text = message.body as? String, !text.isEmpty {
+            items.append(text)
+        }
+        guard !items.isEmpty else { return }
+        let av = UIActivityViewController(activityItems: items, applicationActivities: nil)
+        if let pop = av.popoverPresentationController {   // iPad: anchor to screen center
+            pop.sourceView = view
+            pop.sourceRect = CGRect(x: view.bounds.midX, y: view.bounds.midY, width: 0, height: 0)
+            pop.permittedArrowDirections = []
+        }
+        present(av, animated: true)
     }
 }
